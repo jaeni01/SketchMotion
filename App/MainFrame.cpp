@@ -15,8 +15,8 @@ IMPLEMENT_DYNCREATE(CMainFrame, CFrameWndEx)
 BEGIN_MESSAGE_MAP(CMainFrame, CFrameWndEx)
     ON_WM_CREATE()
     ON_COMMAND(ID_APP_ABOUT, &CMainFrame::OnAppAbout)
-    ON_COMMAND_RANGE(ID_VIEW_TOOL_PANE, ID_VIEW_ROBOT_PANE, &CMainFrame::OnTogglePane)
-    ON_UPDATE_COMMAND_UI_RANGE(ID_VIEW_TOOL_PANE, ID_VIEW_ROBOT_PANE,
+    ON_COMMAND_RANGE(ID_VIEW_TOOL_PANE, ID_VIEW_HARDWARE_PANE, &CMainFrame::OnTogglePane)
+    ON_UPDATE_COMMAND_UI_RANGE(ID_VIEW_TOOL_PANE, ID_VIEW_HARDWARE_PANE,
                                &CMainFrame::OnUpdateTogglePane)
     ON_COMMAND(ID_VISION_TRACE, &CMainFrame::OnVisionTrace)
     ON_COMMAND(ID_VISION_LOAD_TEST_IMAGE, &CMainFrame::OnVisionLoadTestImage)
@@ -59,17 +59,24 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                             ID_VIEW_ROBOT_PANE,
                             WS_CHILD | WS_VISIBLE | CBRS_RIGHT | CBRS_FLOAT_MULTI))
         return -1;
+    if (!m_hardwarePane.Create(L"Hardware", this, CRect(0, 0, 230, 260), TRUE,
+                               ID_VIEW_HARDWARE_PANE,
+                               WS_CHILD | WS_VISIBLE | CBRS_LEFT | CBRS_FLOAT_MULTI))
+        return -1;
 
     m_toolPane.EnableDocking(CBRS_ALIGN_ANY);
     m_cameraPane.EnableDocking(CBRS_ALIGN_ANY);
     m_robotPane.EnableDocking(CBRS_ALIGN_ANY);
+    m_hardwarePane.EnableDocking(CBRS_ALIGN_ANY);
 
     DockPane(&m_toolPane);
     DockPane(&m_cameraPane);
     DockPane(&m_robotPane);
+    DockPane(&m_hardwarePane);
     m_toolPane.ShowPane(TRUE, FALSE, TRUE);
     m_cameraPane.ShowPane(TRUE, FALSE, TRUE);
     m_robotPane.ShowPane(TRUE, FALSE, TRUE);
+    m_hardwarePane.ShowPane(TRUE, FALSE, TRUE);
 
     return 0;
 }
@@ -119,9 +126,10 @@ void CMainFrame::OnViewToolChanged(DrawTool tool) {
 
 CDockablePane* CMainFrame::PaneFromId(UINT nId) {
     switch (nId) {
-    case ID_VIEW_TOOL_PANE:   return &m_toolPane;
-    case ID_VIEW_CAMERA_PANE: return &m_cameraPane;
-    case ID_VIEW_ROBOT_PANE:  return &m_robotPane;
+    case ID_VIEW_TOOL_PANE:     return &m_toolPane;
+    case ID_VIEW_CAMERA_PANE:   return &m_cameraPane;
+    case ID_VIEW_ROBOT_PANE:    return &m_robotPane;
+    case ID_VIEW_HARDWARE_PANE: return &m_hardwarePane;
     }
     return nullptr;
 }

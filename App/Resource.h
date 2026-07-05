@@ -21,6 +21,15 @@
 #define ID_VIEW_TOOL_PANE               32791
 #define ID_VIEW_CAMERA_PANE             32792
 #define ID_VIEW_ROBOT_PANE              32793
+#define ID_VIEW_HARDWARE_PANE           32794
+
+// hardware pane controls
+#define ID_HW_CONNECT_ARM               32841
+#define ID_HW_CONNECT_AGV               32842
+#define ID_HW_DRAW_ROBOT                32843
+#define ID_HW_AGV_MISSION               32844
+#define ID_HW_STOP_ALL                  32845
+#define ID_HW_ESTOP                     32846
 
 // camera pane controls
 #define ID_CAM_START                    32801

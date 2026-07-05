@@ -59,8 +59,10 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BridgeClient.cpp" />
     <ClCompile Include="CameraCapture.cpp" />
     <ClCompile Include="CameraPane.cpp" />
+    <ClCompile Include="HardwarePane.cpp" />
     <ClCompile Include="MainFrame.cpp" />
     <ClCompile Include="RobotSimPane.cpp" />
     <ClCompile Include="SketchDoc.cpp" />
@@ -69,8 +71,10 @@
     <ClCompile Include="ToolPane.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BridgeClient.h" />
     <ClInclude Include="CameraCapture.h" />
     <ClInclude Include="CameraPane.h" />
+    <ClInclude Include="HardwarePane.h" />
     <ClInclude Include="Commands.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="MainFrame.h" />

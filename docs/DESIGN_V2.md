@@ -272,7 +272,8 @@ PC EKF 추정(30–90Hz) ──set_pose_estimate/follow_path──▶ ESP32 (WiF
 
 | 레벨 | 대상 | 방법 | 게이트 |
 |---|---|---|---|
-| 단위 (CI) | Core 신규 4모듈 | 합성 데이터: EKF NEES, 마커 인코드→렌더→디코드 왕복, pure pursuit 기하 케이스, Kabsch 왕복 | 100% 통과 |
+| 단위 (CI) | Core 신규 4모듈 | 합성 데이터: EKF NEES/NIS, 마커 인코드→렌더→디코드 왕복, 캐럿 추종 기하·코너 케이스, Kabsch 왕복 | 100% 통과 |
+| **가상 통합 (CI)** | 전 스택 (HW 제외) | `tools/e2e_mock.ps1`: MockBridge×2 + 앱 자동 구동 — 트레이스→팔 드로잉→**AGV 폐루프 미션**(mock_pose→EKF→set_pose_estimate→PathTracker) 완주 판정 | tools/ci.ps1 게이트 |
 | 필터 일관성 (CI) | EKF | 합성 궤적 몬테카를로 NIS/NEES χ² 검정 | 95% 구간 |
 | HIL 수동 | 마커+EKF | 마커를 손으로 이동, 오버레이 궤적 육안+NIS | Sprint 3 게이트 |
 | **외란 복원 데모** | AGV 폐루프 | 주행 중 AGV를 손으로 밀어 이탈시킴 → 경로 복귀 시간·오버슈트 측정. 카메라 가림 → 500ms 내 정지 확인 | Sprint 4 게이트에 추가 |

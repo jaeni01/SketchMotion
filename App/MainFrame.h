@@ -3,6 +3,7 @@
 #include "framework.h"
 #include "Resource.h"
 #include "CameraPane.h"
+#include "HardwarePane.h"
 #include "RobotSimPane.h"
 #include "ToolPane.h"
 
@@ -42,4 +43,5 @@ private:
     CToolPane m_toolPane;
     CCameraPane m_cameraPane;
     CRobotSimPane m_robotPane;
+    CHardwarePane m_hardwarePane;
 };

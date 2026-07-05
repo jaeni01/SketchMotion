@@ -45,6 +45,7 @@ BEGIN
         MENUITEM "&Tool Pane",                ID_VIEW_TOOL_PANE
         MENUITEM "&Camera Pane",              ID_VIEW_CAMERA_PANE
         MENUITEM "&Robot Simulator Pane",     ID_VIEW_ROBOT_PANE
+        MENUITEM "&Hardware Pane",            ID_VIEW_HARDWARE_PANE
     END
     POPUP "&Help"
     BEGIN
