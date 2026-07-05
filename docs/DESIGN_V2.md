@@ -50,6 +50,58 @@
 | 캘리브레이션 도구 (오프라인) | PC | Python | B | 신규 — 여기만 OpenCV 허용(§8.4) |
 | 프로토콜 스펙·CI·통합테스트 | — | — | D | 신규 |
 
+## 2.5 소프트웨어 아키텍처 (PC HMI 내부 — 스레드·데이터 흐름·상태기계)
+
+### 계층과 의존 규칙 (v1 원칙 계승)
+```
+┌─ App (MFC) ─────────────────────────────────────────────────┐
+│  UI 계층: SketchView · VisionPane · HardwarePane · RobotSim │
+│  제어 계층: MotionOrchestrator(상태기계) · AccuracyReporter │
+│  I/O 계층: CaptureThread(MF) · VisionThread · BridgeClient×2│
+├─ Core (정적 lib, 무의존) ───────────────────────────────────┤
+│  CanvasModel · PathPlanner · MarkerDetector · KalmanFilter  │
+│  FrameTransform · PathTracker · GCodeWriter                 │
+└─ protocol/ (DTO 정의 — App와 브리지가 공유하는 유일한 계약) ┘
+```
+- 의존 방향은 **UI→제어→I/O→Core 단방향**. Core는 여전히 windows.h를 모른다.
+- 네트워크·카메라·타이머 등 부작용은 전부 I/O 계층에 격리 — Core 함수는 "값 입력→값 출력"이라 전 모듈 단위테스트 가능.
+
+### 스레드 모델 (총 5종)
+| 스레드 | 주기 | 하는 일 | UI와의 통신 |
+|---|---|---|---|
+| UI (메인) | 이벤트 | 모든 MFC 객체 소유, 렌더링, 오케스트레이터 실행 | — |
+| CaptureThread | 90fps | MF ReadSample → MJPEG 디코드(RGB32) | 최신 프레임을 **트리플 버퍼**에 게시 |
+| VisionThread | 프레임 도착 시 | MarkerDetector → FrameTransform → **EKF 갱신** | 추정 상태 스냅샷(POD 구조체)을 원자 교체 + PostMessage로 통지 |
+| BridgeClient ×2 (Arm/AGV) | 요청/이벤트 | TCP 송수신, 재접속, 하트비트 | 이벤트를 PostMessage로 마샬링 (v1 카메라 패턴 동일) |
+| 워치독 타이머 | 100ms | 브리지 연결·프레임 신선도 감시 | 이상 시 오케스트레이터에 FAULT 이벤트 |
+
+원칙: **EKF는 VisionThread에서만 갱신**(단일 작성자), 다른 스레드는 스냅샷만 읽는다 — 락 최소화. AGV로 나가는 `set_pose_estimate`는 VisionThread가 갱신 직후 직접 송신(UI 경유 없음 — 지연 최소 경로).
+
+### MotionOrchestrator 상태기계
+```
+IDLE ─시작─▶ CHECK(브리지 hello·캘리브 파일) ─▶ ACT1_HOMOGRAPHY(자동)
+ ─▶ ACT1_DRAWING(팔 실행, 진행률) ─▶ ACT1_REPORT(오차맵 생성)
+ ─▶ TRANSITION(카메라 이동 대기 — 사용자 확인 버튼) ─▶ ACT2_HOMOGRAPHY(자동)
+ ─▶ ACT2_MISSION(EKF 수렴 확인 → follow_path) ─▶ DONE
+어느 상태에서든: E-STOP ─▶ FAULT(전 브리지 estop 브로드캐스트, 사유 표시, 수동 리셋)
+가드 예: ACT2_MISSION 진입은 "EKF NIS 정상 + 마커 검출률 > 90% (직전 3초)"일 때만.
+```
+
+### 로깅·리플레이 (장비 SW 관행)
+- 세션당 `logs/session_*.jsonl`: 모든 프레임 타임스탬프, 마커 관측, EKF 상태/공분산, 송수신 명령을 기록.
+- **리플레이 모드**: 로그를 입력으로 VisionThread 파이프라인을 오프라인 재실행 — 하드웨어 없이 EKF 튜닝(Q 스윕)과 버그 재현 가능. Sprint 3 산출물에 포함.
+
+### 원격(브리지) 측 구조
+- **ArmBridge(Python, myCobot RPi)**: 스레드 2개 — TCP 수신(명령 큐 적재) / 실행기(큐 소비, 보간·소프트리밋 검사, pymycobot 호출, progress 이벤트 발행). `stop`은 큐 폐기 + 현재 세그먼트 감속.
+- **ESP32 펌웨어(Arduino)**: 태스크 2개 — NetTask(TCP 수신·JSON 파싱·상태 갱신) / ControlTask 50Hz(PathTracker → 메카넘 믹싱 → PWM). 공유 상태는 뮤텍스 1개, 워치독은 ControlTask에서 검사.
+
+## 2.6 드로잉 지그와 마커 배치 (명확화)
+
+- 종이 기준 마커 4개는 **종이가 아니라 지그(클립보드형 드로잉 베드)에 부착**한다. 종이 교체 = 지그에 새 종이를 끼우는 것 — 마커가 움직이지 않으므로 **재캘리브레이션 불필요**.
+- 지그는 책상에 고정(양면테이프/클램프). {paper} 원점은 지그 좌상단 마커 기준 — 종이 위치 공차는 지그의 모서리 스토퍼로 ±1mm 이내 관리.
+- 드로잉 가능 영역 = 종이 ∩ 로봇 도달범위 ∩ 소프트리밋 마진. **마커 사각형은 좌표 앵커일 뿐 드로잉 경계가 아니다.**
+- 마커 규격: 기준·스테이션 40mm, AGV 상판 80mm, 펜 상단 25mm (클로즈업/오버헤드 각 거리에서 최소 20px 확보 기준 — Sprint 3 실측 후 조정).
+
 ## 3. 통신 프로토콜 (Bridge Protocol v1 — Sprint 1 확정 대상)
 
 TCP, 한 줄에 JSON 객체 하나(JSON Lines), UTF-8. PC=클라이언트, 브리지=서버(포트: Arm 9101, AGV 9102).
@@ -223,6 +275,7 @@ PC EKF 추정(30–90Hz) ──set_pose_estimate/follow_path──▶ ESP32 (WiF
 | 단위 (CI) | Core 신규 4모듈 | 합성 데이터: EKF NEES, 마커 인코드→렌더→디코드 왕복, pure pursuit 기하 케이스, Kabsch 왕복 | 100% 통과 |
 | 필터 일관성 (CI) | EKF | 합성 궤적 몬테카를로 NIS/NEES χ² 검정 | 95% 구간 |
 | HIL 수동 | 마커+EKF | 마커를 손으로 이동, 오버레이 궤적 육안+NIS | Sprint 3 게이트 |
+| **외란 복원 데모** | AGV 폐루프 | 주행 중 AGV를 손으로 밀어 이탈시킴 → 경로 복귀 시간·오버슈트 측정. 카메라 가림 → 500ms 내 정지 확인 | Sprint 4 게이트에 추가 |
 | 통합 리허설 | 전체 | 매 스프린트 말 시나리오 실행 | 계획서 §4 게이트 |
 | 최종 DoD | 전체 | 원버튼 데모 5회 중 4회, 팔 오차<2mm, AGV RMS<5cm, NIS 통과, 영상 | v2.0 릴리스 |
 
