@@ -122,6 +122,39 @@ uint8_t OtsuThreshold(const GrayImage& src) {
     return bestT;
 }
 
+GrayImage AdaptiveThresholdDark(const GrayImage& src, int tile, float bias) {
+    if (src.Empty() || tile < 4)
+        return {};
+    const int w = src.Width(), h = src.Height();
+    const int tx = (w + tile - 1) / tile, ty = (h + tile - 1) / tile;
+
+    // 타일 평균
+    std::vector<double> mean(static_cast<size_t>(tx) * ty, 0.0);
+    std::vector<int> cnt(static_cast<size_t>(tx) * ty, 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const size_t t = static_cast<size_t>(y / tile) * tx + (x / tile);
+            mean[t] += src.At(x, y);
+            ++cnt[t];
+        }
+    for (size_t i = 0; i < mean.size(); ++i)
+        mean[i] /= std::max(1, cnt[i]);
+
+    GrayImage out(w, h);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            // 이웃 타일 평균과 블렌드해 경계 아티팩트 완화
+            const int tX = x / tile, tY = y / tile;
+            double m = mean[static_cast<size_t>(tY) * tx + tX];
+            int n = 1;
+            if (tX + 1 < tx) { m += mean[static_cast<size_t>(tY) * tx + tX + 1]; ++n; }
+            if (tY + 1 < ty) { m += mean[static_cast<size_t>(tY + 1) * tx + tX]; ++n; }
+            m /= n;
+            out.Set(x, y, src.At(x, y) < m * bias ? 255 : 0);
+        }
+    return out;
+}
+
 GrayImage Invert(const GrayImage& src) {
     GrayImage out(src.Width(), src.Height());
     const uint8_t* p = src.Data();

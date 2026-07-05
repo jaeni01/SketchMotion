@@ -52,10 +52,14 @@
     <ClCompile Include="CanvasModel.cpp" />
     <ClCompile Include="ContourTracer.cpp" />
     <ClCompile Include="Filters.cpp" />
+    <ClCompile Include="FrameTransform.cpp" />
     <ClCompile Include="GCodeWriter.cpp" />
+    <ClCompile Include="KalmanFilter.cpp" />
+    <ClCompile Include="MarkerDetector.cpp" />
     <ClCompile Include="Geometry.cpp" />
     <ClCompile Include="PathPlanner.cpp" />
     <ClCompile Include="PathSimplify.cpp" />
+    <ClCompile Include="PathTracker.cpp" />
     <ClCompile Include="Stroke.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -63,11 +67,15 @@
     <ClInclude Include="CanvasModel.h" />
     <ClInclude Include="ContourTracer.h" />
     <ClInclude Include="Filters.h" />
+    <ClInclude Include="FrameTransform.h" />
     <ClInclude Include="GCodeWriter.h" />
+    <ClInclude Include="KalmanFilter.h" />
+    <ClInclude Include="MarkerDetector.h" />
     <ClInclude Include="Geometry.h" />
     <ClInclude Include="ImageBuffer.h" />
     <ClInclude Include="PathPlanner.h" />
     <ClInclude Include="PathSimplify.h" />
+    <ClInclude Include="PathTracker.h" />
     <ClInclude Include="Stroke.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

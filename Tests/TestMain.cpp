@@ -14,10 +14,11 @@
 #include "../Core/PathSimplify.h"
 #include "../Core/Stroke.h"
 
-namespace {
-
 int g_failures = 0;
 int g_checks = 0;
+void RunV2CoreTests();
+
+namespace {
 
 #define CHECK(cond)                                                          \
     do {                                                                     \
@@ -384,6 +385,7 @@ int main() {
     TestGCodeWriter();
     TestArmKinematics();
     TestVisionToMotionPipeline();
+    RunV2CoreTests();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

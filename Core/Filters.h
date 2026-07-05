@@ -25,4 +25,8 @@ uint8_t OtsuThreshold(const GrayImage& src);
 // 명암 반전
 GrayImage Invert(const GrayImage& src);
 
+// 타일 평균 기반 적응 이진화 (어두운 픽셀 -> 255).
+// 마커 검출용: 조명 불균일에 강함. tile: 타일 한 변(px), bias: 임계 = 타일평균*bias
+GrayImage AdaptiveThresholdDark(const GrayImage& src, int tile = 24, float bias = 0.82f);
+
 } // namespace sm
