@@ -16,8 +16,8 @@ protected:
     CMainFrame() = default;
 
 public:
-    CSketchView* GetActiveSketchView() const;
-    CSketchDoc* GetActiveSketchDoc() const;
+    CSketchView* GetActiveSketchView();
+    CSketchDoc* GetActiveSketchDoc();
 
     void UpdateStatus(DrawTool tool, const sm::PointF* worldPos,
                       float zoom, size_t strokeCount);

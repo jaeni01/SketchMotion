@@ -88,7 +88,7 @@ void CCameraPane::OnPaint() {
     // 컨트롤 영역 배경
     dc.FillSolidRect(client, RGB(45, 47, 52));
 
-    const CRect preview = PreviewRect();
+    CRect preview = PreviewRect();
     if (preview.Width() <= 0 || preview.Height() <= 0)
         return;
 

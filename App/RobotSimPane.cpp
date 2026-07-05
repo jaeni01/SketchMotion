@@ -236,12 +236,14 @@ BOOL CRobotSimPane::OnEraseBkgnd(CDC* /*pDC*/) {
 }
 
 Gdiplus::PointF CRobotSimPane::ToScreen(const sm::PointF& world, const CRect& rc) const {
-    // 월드: 베이스(0,0), y 위. 화면: 베이스를 아래 중앙에.
+    // 월드: 베이스(0,0), y 위. 화면: 패널 상단 뷰포트의 아래 중앙에 베이스.
     const float reach = m_arm.l1 + m_arm.l2; // 400
-    const float scale = std::min(rc.Width() / (2.2f * reach),
-                                 rc.Height() / (1.15f * reach));
+    const float viewH = std::min<float>(static_cast<float>(rc.Height()),
+                                        rc.Width() * 1.1f);
+    const float scale = std::min(rc.Width() / (2.1f * reach),
+                                 viewH / (1.15f * reach));
     const float baseX = rc.left + rc.Width() * 0.5f;
-    const float baseY = rc.bottom - 24.0f;
+    const float baseY = rc.top + viewH - 16.0f;
     return { baseX + world.x * scale, baseY - world.y * scale };
 }
 
@@ -277,7 +279,6 @@ void CRobotSimPane::RenderScene(Graphics& g, const CRect& /*rcClient*/) const {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     SolidBrush bgBrush(Color(255, 28, 29, 33));
     g.FillRectangle(&bgBrush, rc.left, rc.top, rc.Width(), rc.Height());
-    g.SetClip(Rect(rc.left, rc.top, rc.Width(), rc.Height()));
 
     // 작업 반경 (도넛 외곽)
     const PointF basePt = ToScreen({ 0, 0 }, rc);
@@ -350,6 +351,4 @@ void CRobotSimPane::RenderScene(Graphics& g, const CRect& /*rcClient*/) const {
                                     : Color(255, 120, 200, 120));
         g.FillEllipse(&tipBrush, sWrist.X - 4, sWrist.Y - 4, 8.0f, 8.0f);
     }
-
-    g.ResetClip();
 }

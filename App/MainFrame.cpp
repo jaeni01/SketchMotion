@@ -66,8 +66,10 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 
     DockPane(&m_toolPane);
     DockPane(&m_cameraPane);
-    // 로봇 패널은 카메라 패널 아래에 도킹
-    m_robotPane.DockToWindow(&m_cameraPane, CBRS_ALIGN_BOTTOM);
+    DockPane(&m_robotPane);
+    m_toolPane.ShowPane(TRUE, FALSE, TRUE);
+    m_cameraPane.ShowPane(TRUE, FALSE, TRUE);
+    m_robotPane.ShowPane(TRUE, FALSE, TRUE);
 
     return 0;
 }
@@ -80,11 +82,11 @@ void CMainFrame::ApplyDarkTitleBar() {
 
 // ------------------------------------------------------------ 뷰/문서 접근
 
-CSketchView* CMainFrame::GetActiveSketchView() const {
+CSketchView* CMainFrame::GetActiveSketchView() {
     return dynamic_cast<CSketchView*>(GetActiveView());
 }
 
-CSketchDoc* CMainFrame::GetActiveSketchDoc() const {
+CSketchDoc* CMainFrame::GetActiveSketchDoc() {
     return dynamic_cast<CSketchDoc*>(GetActiveDocument());
 }
 
