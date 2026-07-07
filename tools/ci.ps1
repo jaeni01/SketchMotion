@@ -9,6 +9,10 @@ Write-Host "== [1/3] Build ($Config x64) =="
 & $msbuild (Join-Path $Root "SketchMotion.sln") /p:Configuration=$Config /p:Platform=x64 /m /v:minimal /nologo
 if ($LASTEXITCODE -ne 0) { Write-Host "CI FAIL: build" -ForegroundColor Red; exit 1 }
 
+Write-Host "== [1.5/3] Header self-containment =="
+powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "tools\check_selfcontained.ps1")
+if ($LASTEXITCODE -ne 0) { Write-Host "CI FAIL: self-containment" -ForegroundColor Red; exit 1 }
+
 Write-Host "== [2/3] Unit tests =="
 & (Join-Path $Root "build\$Config\Tests.exe")
 if ($LASTEXITCODE -ne 0) { Write-Host "CI FAIL: unit tests" -ForegroundColor Red; exit 1 }
