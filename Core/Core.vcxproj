@@ -51,6 +51,7 @@
     <ClCompile Include="ArmKinematics.cpp" />
     <ClCompile Include="CanvasModel.cpp" />
     <ClCompile Include="ContourTracer.cpp" />
+    <ClCompile Include="EmgProcessor.cpp" />
     <ClCompile Include="Filters.cpp" />
     <ClCompile Include="FrameTransform.cpp" />
     <ClCompile Include="GCodeWriter.cpp" />
@@ -66,6 +67,7 @@
     <ClInclude Include="ArmKinematics.h" />
     <ClInclude Include="CanvasModel.h" />
     <ClInclude Include="ContourTracer.h" />
+    <ClInclude Include="EmgProcessor.h" />
     <ClInclude Include="Filters.h" />
     <ClInclude Include="FrameTransform.h" />
     <ClInclude Include="GCodeWriter.h" />

@@ -5,7 +5,8 @@
 ## 1. 전송 계층
 
 - TCP, **한 줄 = JSON 객체 하나** (JSON Lines), 개행 `\n`, UTF-8.
-- PC = 클라이언트, 브리지 = 서버. 포트: **Arm 9101, AGV 9102** (Mock도 동일 포트 사용, 호스트만 127.0.0.1).
+- PC = 클라이언트, 브리지 = 서버. 포트: **Arm 9101, AGV 9102, EMG 9103** (Mock도 동일 포트, 호스트만 127.0.0.1).
+- EMG 브리지는 STM32 프론트엔드를 감싼다. 실물은 **USB CDC(가상 COM)**로 연결되고, PC측 얇은 어댑터(`bridges/emg_bridge`)가 시리얼↔TCP를 중계한다. Mock은 TCP 직결.
 - 재접속: PC가 2초 간격 재시도. 브리지는 동시 접속 1개만 허용(새 접속이 오면 이전 접속 종료).
 - 숫자는 IEEE double, 좌표 단위는 **frame에 따라 mm(paper/robot) 또는 m(floor)**. 픽셀 좌표 금지.
 
@@ -26,7 +27,7 @@
 ### 공통
 | cmd | params | result | 비고 |
 |---|---|---|---|
-| `hello` | `{}` | `{device, proto, version}` | device: `"mycobot280"` \| `"agv_mecanum"` \| `"mock_arm"` \| `"mock_agv"`, proto: 1 |
+| `hello` | `{}` | `{device, proto, version}` | device: `"mycobot280"` \| `"agv_mecanum"` \| `"emg_stm32"` \| `"mock_*"`, proto: 1 |
 | `stop` | `{}` | `{}` | 감속 정지, 명령 큐 폐기 |
 | `estop` | `{}` | `{}` | 즉시 정지. Arm: 서보 릴리즈. AGV: PWM 0 |
 | `telemetry` | `{}` | 장치별 §5 | 폴링용 (1Hz 권장) |
@@ -49,6 +50,16 @@
 - `theta`: {floor} x축 기준 CCW 라디안, AGV 진행방향 +x.
 - `t_cam`: PC 단조시계(초). 브리지는 수신시각과의 차로 파이프라인 지연을 관찰만 한다(보상은 PC EKF가 예측으로 수행).
 
+### EMG (9103) — sEMG 프론트엔드 (STM32)
+| cmd | params |
+|---|---|
+| `start_stream` | `{ "rate":1000 }` — 지정 레이트로 `emg` 이벤트 스트림 시작 |
+| `stop_stream` | `{}` |
+| `calibrate_mvc` | `{ "seconds":3 }` — 최대수의수축 창을 열어 MVC 기준 등록. 완료 시 `mvc` 이벤트 |
+
+- 원 신호 처리(정류·엔벌로프·칼만·데드존)는 **PC의 Core::EmgProcessor**가 수행한다(브리지/펌웨어는 raw 또는 경량 엔벌로프만 올림 — v2 무의존 Core 원칙). STM32는 ADC 샘플링 + 1차 정류만.
+- 안전: EMG는 관측 전용(구동 없음). 다만 EMG→그리퍼 폐루프 사용 시 Arm/AGV의 `estop`이 최우선.
+
 ## 4. 이벤트
 
 | event | data | 발신 |
@@ -56,11 +67,14 @@
 | `progress` | `{ "phase":"draw"|"path", "seg":3, "of":12, "pct":41.2 }` | Arm/AGV 실행 중 1–2Hz |
 | `done` | `{ "phase":"draw"|"path" }` | 완주 시 |
 | `fault` | `{ "reason":"watchdog"|"softlimit"|"hw" , "detail":"..." }` | 이상 시 |
+| `emg` | `{ "raw":[..], "t":123.456 }` 또는 `{ "raw":512.0, "t":.. }` | EMG 스트림 (레이트 만큼, 배치 허용) |
+| `mvc` | `{ "envelope": 0.83 }` | `calibrate_mvc` 완료 시 (PC가 EmgProcessor.SetMvc에 사용) |
 
 ## 5. telemetry result
 
 - Arm: `{ "joints":[j1..j6 deg], "moving":bool, "queued":int }`
 - AGV: `{ "pose_age_ms":int, "wheel":[w1..w4 pwm], "state":"idle"|"follow"|"fault" }`
+- EMG: `{ "streaming":bool, "rate":int, "mvc_set":bool }`
 
 ## 6. 안전 규칙 (강제)
 

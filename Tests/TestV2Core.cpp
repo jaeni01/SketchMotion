@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "../Core/EmgProcessor.h"
 #include "../Core/FrameTransform.h"
 #include "../Core/KalmanFilter.h"
 #include "../Core/MarkerDetector.h"
@@ -335,9 +336,86 @@ void TestMarkerToFloorPipeline() {
     CHECK(agvFloor.y > 0.5f && agvFloor.y < 0.85f);
 }
 
+// --------------------------------------------------------- EmgProcessor
+// 합성 sEMG: 안정 시 저진폭 백색잡음, 수축 시 고진폭 버스트 (엔벌로프↑)
+double SynthEmg(Rng& rng, double contraction /*0..1*/) {
+    // 근수축 세기에 비례해 잡음 진폭이 커지는 근사 (sEMG의 진폭변조 특성)
+    const double amp = 0.05 + contraction * 1.0;
+    return rng.Gauss(amp);
+}
+
+void TestEmgProcessor() {
+    EmgParams p;
+    p.sampleRateHz = 1000.0;
+    EmgProcessor emg(p);
+    Rng rng;
+
+    // 워밍업 (필터 정착) + MVC 캘리브레이션: 강수축 2초의 최대 엔벌로프
+    double mvcMax = 0;
+    for (int i = 0; i < 2000; ++i) {
+        const auto o = emg.Push(SynthEmg(rng, 1.0));
+        if (i > 500) mvcMax = std::max(mvcMax, o.envelope);
+    }
+    CHECK(mvcMax > 0.0);
+    emg.SetMvc(mvcMax);
+
+    // 이완 상태: 정규화·비례 낮고, 제스처 false
+    double relaxNorm = 0;
+    for (int i = 0; i < 1500; ++i) {
+        const auto o = emg.Push(SynthEmg(rng, 0.0));
+        if (i > 800) relaxNorm = o.normalized;
+    }
+    CHECK(relaxNorm < 0.2);
+
+    // 중간 수축(0.5): 비례 출력이 이완보다 확실히 큼, 단조성
+    double midProp = 0;
+    for (int i = 0; i < 1500; ++i) {
+        const auto o = emg.Push(SynthEmg(rng, 0.5));
+        if (i > 800) midProp = o.proportional;
+    }
+    // 강수축(1.0): 비례 출력이 중간보다 큼
+    double hiProp = 0; bool hiContract = false;
+    for (int i = 0; i < 1500; ++i) {
+        const auto o = emg.Push(SynthEmg(rng, 1.0));
+        if (i > 800) { hiProp = o.proportional; hiContract = o.contracted; }
+    }
+    CHECK(midProp > 0.05);          // 데드존 넘김
+    CHECK(hiProp > midProp);        // 비례성(단조 증가)
+    CHECK(hiProp <= 1.0 + 1e-9);    // 클램프
+    CHECK(hiContract);              // 강수축 시 제스처 on
+
+    // 히스테리시스: on→off 임계가 달라 채터링 안 남
+    // 수축 유지하다 서서히 이완 → contracted가 off로 '한 번' 전이
+    int transitions = 0; bool prev = true;
+    for (int i = 0; i < 4000; ++i) {
+        const double c = 1.0 - (i / 4000.0); // 1.0 -> 0.0 느린 하강
+        const auto o = emg.Push(SynthEmg(rng, c));
+        if (o.contracted != prev) { ++transitions; prev = o.contracted; }
+    }
+    CHECK(transitions <= 2); // 히스테리시스로 왕복 채터링 없음 (이상적 1회)
+
+    // 데드존: 아주 약한 신호는 비례 0
+    EmgProcessor emg2(p);
+    for (int i = 0; i < 500; ++i) emg2.Push(SynthEmg(rng, 1.0));
+    emg2.SetMvc(mvcMax);
+    double weakProp = 1.0;
+    for (int i = 0; i < 1000; ++i) {
+        const auto o = emg2.Push(SynthEmg(rng, 0.02)); // 데드존 이하
+        if (i > 600) weakProp = o.proportional;
+    }
+    CHECK(weakProp == 0.0);
+
+    // 리셋 후 상태 초기화
+    emg2.Reset();
+    const auto o = emg2.Push(0.0);
+    CHECK(o.proportional == 0.0);
+    CHECK(!o.contracted);
+}
+
 } // namespace
 
 void RunV2CoreTests() {
+    TestEmgProcessor();
     TestHomography();
     TestRigid2D();
     TestEkfBasics();

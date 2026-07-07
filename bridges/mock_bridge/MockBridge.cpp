@@ -3,6 +3,7 @@
 // 용도: 하드웨어 없는 개발/CI. 사용법:
 //   MockBridge.exe arm   (포트 9101, myCobot 흉내)
 //   MockBridge.exe agv   (포트 9102, 메카넘 AGV 흉내 - 내부 동역학 시뮬 + mock_pose 발행)
+//   MockBridge.exe emg   (포트 9103, STM32 EMG 프론트엔드 흉내 - 합성 근수축 raw 스트림)
 //
 // AGV 모드는 실물 ESP32 펌웨어와 같은 구조(수신 태스크 + 50Hz 제어 태스크)로 돌며,
 // PathTracker(Core)를 온보드 실행한다. 제어에는 PC가 준 추정 자세를 쓰고(실물과 동일),
@@ -275,13 +276,98 @@ void HandleAgv(const proto::JVal& msg) {
     SendErr(id, "unknown cmd: " + cmd);
 }
 
+// ---------------------------------------------------------------- EMG mock
+// 실물 STM32 프론트엔드 흉내: 1kHz raw ADC(0..4095) 스트림.
+// 근수축 세기를 시간에 따라 변조(안정→수축→안정)해 EmgProcessor가 엔벌로프·
+// 제스처를 뽑을 수 있는 신호를 만든다. 신호처리는 PC(Core)가 하므로 여기선 raw만.
+struct EmgState {
+    std::mutex m;
+    bool streaming = false;
+    int rate = 1000;
+    bool mvcRequested = false;
+};
+EmgState g_emg;
+
+void EmgStreamThread() {
+    Rng rng;
+    auto prev = steady_clock::now();
+    double phase = 0.0; // 근수축 시나리오 위상 (초)
+    uint32_t tms = 0;
+    while (!g_quit.load()) {
+        std::this_thread::sleep_for(milliseconds(10)); // 10ms마다 배치
+        bool stream; int rate;
+        {
+            std::lock_guard<std::mutex> lk(g_emg.m);
+            stream = g_emg.streaming; rate = g_emg.rate;
+        }
+        if (!stream) { prev = steady_clock::now(); continue; }
+        const auto now = steady_clock::now();
+        const double dt = duration<double>(now - prev).count();
+        prev = now;
+        phase += dt;
+
+        // 근수축 시나리오: 6초 주기 (2초 안정, 2초 수축, 2초 안정)
+        const double cyc = std::fmod(phase, 6.0);
+        double contraction = 0.0;
+        if (cyc > 2.0 && cyc < 4.0) contraction = 1.0;
+        else if (cyc >= 4.0 && cyc < 4.3) contraction = 0.5; // 하강 엣지
+
+        // 배치: dt 동안의 샘플 수만큼 raw 방출 (진폭변조 백색잡음)
+        const int nSamp = std::max(1, static_cast<int>(dt * rate));
+        for (int i = 0; i < nSamp; ++i) {
+            const double amp = 0.05 + contraction * 1.0;
+            const double centered = rng.Gauss(amp);         // -.. ~ +..
+            const int raw = std::clamp(static_cast<int>(2048 + centered * 900), 0, 4095);
+            char d[64];
+            std::snprintf(d, sizeof(d), "{\"raw\":%d,\"t\":%lu}", raw,
+                          static_cast<unsigned long>(tms));
+            SendEvent("emg", d);
+            tms += static_cast<uint32_t>(1000.0 / rate);
+        }
+    }
+}
+
+void HandleEmg(const proto::JVal& msg) {
+    const long long id = static_cast<long long>(msg.NumOr("id", -1));
+    const std::string cmd = msg.StrOr("cmd", "");
+    if (cmd == "hello") {
+        SendOk(id, "{\"device\":\"mock_emg\",\"proto\":1,\"version\":\"mock-1.0\"}");
+    } else if (cmd == "start_stream") {
+        const proto::JVal* p = msg.Get("params");
+        std::lock_guard<std::mutex> lk(g_emg.m);
+        g_emg.rate = p ? static_cast<int>(p->NumOr("rate", 1000)) : 1000;
+        g_emg.streaming = true;
+        SendOk(id);
+    } else if (cmd == "stop_stream") {
+        std::lock_guard<std::mutex> lk(g_emg.m);
+        g_emg.streaming = false;
+        SendOk(id);
+    } else if (cmd == "calibrate_mvc") {
+        // PC가 스트림에서 MVC를 계산한다는 전제 → 여기선 힌트 이벤트 하나 발행
+        SendOk(id, "{\"note\":\"PC computes MVC from stream\"}");
+    } else if (cmd == "telemetry") {
+        std::lock_guard<std::mutex> lk(g_emg.m);
+        char r[96];
+        std::snprintf(r, sizeof(r), "{\"streaming\":%s,\"rate\":%d,\"mvc_set\":false}",
+                      g_emg.streaming ? "true" : "false", g_emg.rate);
+        SendOk(id, r);
+    } else if (cmd == "stop" || cmd == "estop") {
+        std::lock_guard<std::mutex> lk(g_emg.m);
+        g_emg.streaming = false;
+        SendOk(id);
+    } else {
+        SendErr(id, "unknown cmd: " + cmd);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0); // 리다이렉트 시에도 즉시 flush (디버그 로그 보존)
     const std::string mode = argc > 1 ? argv[1] : "arm";
     const bool isAgv = mode == "agv";
-    const int port = argc > 2 ? std::atoi(argv[2]) : (isAgv ? 9102 : 9101);
+    const bool isEmg = mode == "emg";
+    const int port = argc > 2 ? std::atoi(argv[2]) : (isEmg ? 9103 : isAgv ? 9102 : 9101);
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
@@ -305,6 +391,8 @@ int main(int argc, char** argv) {
     std::thread sim;
     if (isAgv)
         sim = std::thread(AgvSimThread);
+    else if (isEmg)
+        sim = std::thread(EmgStreamThread);
 
     for (;;) {
         SOCKET c = accept(listener, nullptr, nullptr);
@@ -335,6 +423,8 @@ int main(int argc, char** argv) {
                     continue;
                 if (isAgv)
                     HandleAgv(*msg);
+                else if (isEmg)
+                    HandleEmg(*msg);
                 else
                     HandleArm(*msg);
             }

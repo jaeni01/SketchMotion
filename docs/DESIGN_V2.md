@@ -45,7 +45,9 @@
 | App::MotionOrchestrator | PC | C++ | A | 신규 — 시나리오 상태기계 |
 | ArmBridge (드로잉 실행기) | myCobot RPi | Python(pymycobot) | C | 신규 |
 | AGV 펌웨어 (TCP 브리지+추종+메카넘 믹싱+워치독) | ESP32 (ACEBOTT) | Arduino C++ | C | 신규 — RPi/STM32 계층 제거 |
-| 1-DOF 임피던스 테스트베드 (연구 트랙, §13) | NUCLEO-F103RB | C | 재니(연구) | 스트레치 — v2 필수 아님 |
+| Core::EmgProcessor (엔벌로프·칼만·제스처) | PC | C++ (무의존) | B | 신규 — EMG 데모(§15) |
+| EMG 프론트엔드 (ADC 1kHz + 스트림) | NUCLEO-F103RB | C | B/C | 신규 — §15, v2.1 브릿지 |
+| 1-DOF 임피던스 테스트베드 (연구 트랙, §13) | NUCLEO-F103RB(여유분) | C | 재니(연구) | 2순위 스트레치 |
 | MockBridge (하드웨어 없는 개발용) | PC | Python | D | 신규 |
 | 캘리브레이션 도구 (오프라인) | PC | Python | B | 신규 — 여기만 OpenCV 허용(§8.4) |
 | 프로토콜 스펙·CI·통합테스트 | — | — | D | 신규 |
@@ -319,10 +321,40 @@ SketchMotion/
 **v2 본선에 넣지 않는 이유(명시)**: myCobot은 토크 인터페이스가 없어 임피던스 제어 불가, DEA 하드웨어 부재. 이론을 위해 본선 스코프를 늘리는 것은 v1 실패 패턴.
 
 **정당한 접점 2개**:
-1. **NUCLEO-F103RB 1-DOF 테스트베드** — 논문의 "실물 검증 경로" 1단계. DC 모터+엔코더+직렬 스프링(SEA) 1관절을 F103RB로 구동, 에너지 성형 기반 임피던스 제어(논문 모터 서브시스템 PH 모델 그대로)를 실측. DEA 없이도 "PH 모델링→IDA-PBC→실물"의 최소 루프를 닫는다. 필요 부품: DC 기어모터+엔코더, 모터드라이버(L298N급), 스프링, 커플링 — 소액.
+1. **NUCLEO-F103RB 1-DOF 테스트베드** — 논문의 "실물 검증 경로" 1단계. DC 모터+엔코더+직렬 스프링(SEA) 1관절을 F103RB로 구동, 에너지 성형 기반 임피던스 제어(논문 모터 서브시스템 PH 모델 그대로)를 실측. DEA 없이도 "PH 모델링→IDA-PBC→실물"의 최소 루프를 닫는다. 필요 부품: DC 기어모터+엔코더, 모터드라이버(L298N급), 스프링, 커플링 — 소액. **단, F103RB의 1순위 배정은 §15(EMG 프론트엔드)이고, 이 테스트베드는 여유 보드 확보 시의 2순위다.**
 2. **스프링 펜 홀더(§6.2)의 이론적 서사** — 하드-소프트 계면에 순응 요소를 삽입하는 논문 §1.1 문제 ②·③의 실물 최소 사례로 인용.
 
 시간 규칙: 연구 트랙은 v2 게이트가 그린일 때만 진행(주당 상한 1일). Jira 라벨 `research`.
+
+## 15. STM32 = EMG 프론트엔드 (v2.1 브릿지, 확정 배정)
+
+**결정**: NUCLEO-F103RB의 1순위 용도는 **표면 근전(sEMG) 취득 보드**다. AGV 저수준이 ESP32로 확정되며 STM32가 v2 본선에서 빠졌으나(§6.3), "이유 없이 끼우지 않는다" 원칙에 따라 억지 역할 대신 **다음 프로젝트(EMG 폐루프 데모)의 심장**으로 예약한다. 이는 SketchMotion 인프라를 재사용해 개발자의 진로 서사(생체신호→실시간 폐루프 디코딩)로 잇는 다리다.
+
+### 왜 이게 타당한가 (억지가 아닌 이유)
+- STM32의 교과서적 용도 = **하드 리얼타임 ADC + 타이머 + DSP**. sEMG 1kHz 샘플링이 정확히 그 일이다.
+- SketchMotion의 브리지 아키텍처에 **`EmgBridge`를 새 입력원으로 추가**하면 끝 — Arm/AGV 브리지와 동일 패턴(§2.5, §3). 폐루프 오케스트레이션·로깅·MockBridge 하네스가 그대로 재사용된다.
+- 신호 처리 본체는 **PC의 `Core::EmgProcessor`**(무의존 Core 원칙 유지). STM32는 샘플링·전송만.
+
+### 파이프라인
+```
+MyoWare 2.0 sEMG ─(ENV/RAW)→ STM32 F103RB (ADC 1kHz, PA0)
+   → USART2 VCP(115200) JSON Lines {"event":"emg","data":{"raw":0..4095,"t":ms}}
+   → emg_bridge(PC, 시리얼↔TCP 어댑터) → 9103 TCP
+   → App BridgeClient → Core::EmgProcessor
+        (고역 DC제거 → 정류 → 저역 엔벌로프 → 1D 칼만 → MVC정규화 → 데드존 → 비례/히스테리시스 제스처)
+   → 그리퍼/커서/로봇 비례 제어  (Arm/AGV estop이 최우선)
+```
+
+### 구현 상태 (이번 스프린트)
+- ✅ `Core::EmgProcessor` (+ 단위테스트 12종: 비례성·데드존·히스테리시스·MVC·리셋) — **556 checks 통과**
+- ✅ 프로토콜 §3 EMG(9103) 확장: `start_stream`/`stop_stream`/`calibrate_mvc`, `emg`/`mvc` 이벤트
+- ✅ `firmware/emg_stm32/` 펌웨어 스켈레톤 + 배선/CubeMX 설정 README
+- ✅ `MockBridge.exe emg` — 합성 근수축 스트림, 하드웨어 없이 파이프라인 검증
+- ✅ `tools/emg_e2e` — MockBridge emg → EmgProcessor 가상 통합 **PASS** (이완<수축 비례출력, 제스처 검출)
+- ⏳ 실물: MyoWare 2.0 구매 + STM32CubeIDE 프로젝트화 + `emg_bridge` 시리얼 어댑터 (하드웨어 확보 후)
+
+### 이력서 한 줄 (BCI 아카이브 08번)
+"표면 근전(sEMG)을 실시간 디코딩해 로봇을 비례 제어하는 폐루프 — 전처리 + 상태추정(칼만) + 제어(P/데드존/히스테리시스). SketchMotion 브리지 인프라 재사용, 하드웨어 없이 목 브리지로 파이프라인 검증."
 
 ## 14. 작업공간 배치 (확정)
 
