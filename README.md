@@ -6,6 +6,13 @@ SketchMotion is a native Windows desktop application built with **MFC and C++20*
 
 > 한국어 요약은 [아래](#한국어-요약)에 있습니다.
 
+## Status
+
+- **v1 (complete)** — the Vision-to-Motion desktop suite below. Clean Release x64 build, **556 unit-test checks passing**, end-to-end demo captured.
+- **v2 (in progress)** — closing the loop with real hardware: an overhead **global-shutter camera + EKF state estimation** drives a real robot arm and a mecanum AGV. The *software* for v2 is built and verified without hardware — a **6-state EKF validated by NIS/NEES χ² consistency tests**, a self-implemented fiducial-marker detector, a holonomic path tracker, and a full closed-loop **virtual integration** against a mock bridge (`tools/e2e_mock.ps1`). Physical hardware bring-up is the remaining step. See [docs/DESIGN_V2.md](docs/DESIGN_V2.md) and [docs/PLAN_V2.md](docs/PLAN_V2.md).
+
+> Why this matters even mid-flight: the hard parts an interviewer would probe — **real-time concurrency (latency budgets, lock-minimized single-writer state, triple buffering), a hand-written EKF proven correct by statistical consistency tests rather than "it looks right", and a device-agnostic bridge protocol** — are all done and testable today. Filters are validated in simulation because that is where ground truth exists; hardware adds real-noise tuning, not correctness.
+
 ![SketchMotion — camera test image traced to canvas, then redrawn by the simulated robot arm](docs/images/screenshot-main.png)
 *Right to left: the Camera pane's test image is traced into vector strokes on the canvas; the 2-link arm in the Robot Simulator pane has just finished redrawing it in ink.*
 
@@ -35,18 +42,26 @@ No webcam? `Vision > Load Test Image` feeds a synthetic scene through the same p
 
 ```
 SketchMotion.sln
-├── Core/    C++20 static library — ZERO framework dependencies
-│            geometry, stroke model, filters, Moore-neighbor contour tracing,
-│            RDP simplification, path planning, G-code writer, 2-link FK/IK,
-│            .skm JSON serialization (hand-rolled schema parser)
-├── App/     MFC executable — CFrameWndEx + 3 CDockablePane, dark theme,
-│            Media Foundation capture, GDI+ rendering, Command-pattern undo
-└── Tests/   dependency-free console test runner — 474 assertions over Core
+├── Core/       C++20 static library — ZERO framework dependencies
+│               geometry, stroke model, filters, Moore-neighbor contour tracing,
+│               RDP simplification, path planning, G-code writer, 2-link FK/IK,
+│               .skm JSON serialization (hand-rolled parser)
+│               v2: 6-state EKF, fiducial-marker detector, holonomic path
+│               tracker, homography/Kabsch frame transforms, EMG processor
+├── App/        MFC executable — CFrameWndEx + docking panes, dark theme,
+│               Media Foundation capture, GDI+ rendering, Command-pattern undo,
+│               v2: TCP bridge client (worker thread → PostMessage), hardware pane
+├── Tests/      dependency-free console test runner — 556 assertions over Core
+├── protocol/   device-agnostic bridge protocol (JSON Lines) + mini JSON parser
+├── bridges/    Python arm bridge (myCobot), C++ mock bridges (arm/agv/emg)
+├── firmware/   ESP32 mecanum AGV (Arduino), STM32 EMG front-end (bare-metal C)
+├── tools/      CI, mock end-to-end integration, header self-containment check
+└── docs/       architecture, v2 design/plan, coding conventions
 ```
 
-The strict Core/App split is the point: all algorithms are testable without a window handle, and the MFC layer only does what MFC is good at — windows, input, message routing.
+The strict Core/App split is the point: **every algorithm is testable without a window handle, a socket, or hardware.** The MFC layer only does what MFC is good at (windows, input, message routing); networking and devices live behind a bridge protocol so a mock can stand in for real hardware. Header self-containment is enforced in CI (`tools/check_selfcontained.ps1`).
 
-Key engineering decisions are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Key engineering decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (v1), [docs/DESIGN_V2.md](docs/DESIGN_V2.md) (v2 — threading model, state machine, EKF design), [docs/CONVENTIONS.md](docs/CONVENTIONS.md) (coding standard).
 
 ## Building
 
